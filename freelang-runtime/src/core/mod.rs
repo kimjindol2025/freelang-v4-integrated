@@ -4,7 +4,9 @@
 pub mod value;
 pub mod object;
 pub mod traits;
+pub mod function;
 
 pub use value::Value;
 pub use object::Object;
 pub use traits::{Callable, Displayable};
+pub use function::{FunctionKind, UserFunction, NativeFunction};
