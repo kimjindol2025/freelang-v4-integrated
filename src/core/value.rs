@@ -34,6 +34,12 @@ pub enum Value {
     Error(String),
 }
 
+impl PartialEq for Value {
+    fn eq(&self, other: &Self) -> bool {
+        self.equals(other)
+    }
+}
+
 impl Value {
     /// Get type name as string
     pub fn type_of(&self) -> &str {
@@ -153,6 +159,100 @@ impl Value {
     pub fn empty_array() -> Self {
         Value::Array(Rc::new(RefCell::new(Vec::new())))
     }
+
+    /// Check if value is a number
+    pub fn is_number(&self) -> bool {
+        matches!(self, Value::Number(_))
+    }
+
+    /// Check if value is a string
+    pub fn is_string(&self) -> bool {
+        matches!(self, Value::String(_))
+    }
+
+    /// Check if value is an array
+    pub fn is_array(&self) -> bool {
+        matches!(self, Value::Array(_))
+    }
+
+    /// Check if value is an object
+    pub fn is_object(&self) -> bool {
+        matches!(self, Value::Object(_))
+    }
+
+    /// Check if value is a function
+    pub fn is_function(&self) -> bool {
+        matches!(self, Value::Function(_))
+    }
+
+    /// Check if value is an error
+    pub fn is_error(&self) -> bool {
+        matches!(self, Value::Error(_))
+    }
+
+    /// Check if value is null
+    pub fn is_null(&self) -> bool {
+        matches!(self, Value::Null)
+    }
+
+    /// Check if value is a boolean
+    pub fn is_bool(&self) -> bool {
+        matches!(self, Value::Bool(_))
+    }
+
+    /// Get array length (returns 0 if not array)
+    pub fn array_len(&self) -> usize {
+        match self {
+            Value::Array(arr) => arr.borrow().len(),
+            _ => 0,
+        }
+    }
+
+    /// Get object keys (returns empty vec if not object)
+    pub fn object_keys(&self) -> Vec<String> {
+        match self {
+            Value::Object(obj) => obj.borrow().keys().cloned().collect(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// Add to array
+    pub fn array_push(&self, value: Value) -> Result<(), String> {
+        match self {
+            Value::Array(arr) => {
+                arr.borrow_mut().push(value);
+                Ok(())
+            }
+            _ => Err("Cannot push to non-array".to_string()),
+        }
+    }
+
+    /// Pop from array
+    pub fn array_pop(&self) -> Result<Option<Value>, String> {
+        match self {
+            Value::Array(arr) => Ok(arr.borrow_mut().pop()),
+            _ => Err("Cannot pop from non-array".to_string()),
+        }
+    }
+
+    /// Set object property
+    pub fn set_property(&self, key: String, value: Value) -> Result<(), String> {
+        match self {
+            Value::Object(obj) => {
+                obj.borrow_mut().insert(key, value);
+                Ok(())
+            }
+            _ => Err("Cannot set property on non-object".to_string()),
+        }
+    }
+
+    /// Get object property
+    pub fn get_property(&self, key: &str) -> Result<Option<Value>, String> {
+        match self {
+            Value::Object(obj) => Ok(obj.borrow().get(key).cloned()),
+            _ => Err("Cannot get property from non-object".to_string()),
+        }
+    }
 }
 
 impl fmt::Display for Value {
@@ -180,36 +280,205 @@ impl fmt::Debug for Value {
 mod tests {
     use super::*;
 
+    // Type checking tests
     #[test]
     fn test_type_of() {
         assert_eq!(Value::Null.type_of(), "null");
         assert_eq!(Value::Bool(true).type_of(), "boolean");
         assert_eq!(Value::Number(42.0).type_of(), "number");
         assert_eq!(Value::String("hello".to_string()).type_of(), "string");
+        assert_eq!(Value::Array(Rc::new(RefCell::new(vec![]))).type_of(), "array");
+        assert_eq!(Value::Object(Rc::new(RefCell::new(HashMap::new()))).type_of(), "object");
     }
 
+    #[test]
+    fn test_is_type_methods() {
+        let num = Value::Number(42.0);
+        let str = Value::String("hello".to_string());
+        let arr = Value::empty_array();
+        let obj = Value::empty_object();
+
+        assert!(num.is_number());
+        assert!(str.is_string());
+        assert!(arr.is_array());
+        assert!(obj.is_object());
+        assert!(Value::Null.is_null());
+        assert!(Value::Bool(true).is_bool());
+    }
+
+    // Truthiness tests
     #[test]
     fn test_is_truthy() {
         assert!(!Value::Null.is_truthy());
         assert!(!Value::Bool(false).is_truthy());
         assert!(Value::Bool(true).is_truthy());
         assert!(Value::Number(42.0).is_truthy());
+        assert!(Value::Number(-1.0).is_truthy());
         assert!(!Value::Number(0.0).is_truthy());
+        assert!(!Value::Number(f64::NAN).is_truthy());
+        assert!(Value::String("hello".to_string()).is_truthy());
+        assert!(!Value::String("".to_string()).is_truthy());
     }
 
+    // Type conversion tests
     #[test]
     fn test_to_number() {
         assert_eq!(Value::Null.to_number(), 0.0);
         assert_eq!(Value::Bool(true).to_number(), 1.0);
         assert_eq!(Value::Bool(false).to_number(), 0.0);
         assert_eq!(Value::Number(42.0).to_number(), 42.0);
+        assert_eq!(Value::Number(-3.14).to_number(), -3.14);
+        assert_eq!(Value::String("123".to_string()).to_number(), 123.0);
+        assert_eq!(Value::String("3.14".to_string()).to_number(), 3.14);
+        assert_eq!(Value::String("invalid".to_string()).to_number(), 0.0);
     }
 
     #[test]
     fn test_to_string() {
         assert_eq!(Value::Null.to_string(), "null");
         assert_eq!(Value::Bool(true).to_string(), "true");
+        assert_eq!(Value::Bool(false).to_string(), "false");
         assert_eq!(Value::Number(42.0).to_string(), "42");
+        assert_eq!(Value::Number(3.14).to_string(), "3.14");
         assert_eq!(Value::String("hello".to_string()).to_string(), "hello");
+    }
+
+    // Array tests
+    #[test]
+    fn test_array_creation() {
+        let arr = Value::array(vec![
+            Value::Number(1.0),
+            Value::Number(2.0),
+            Value::Number(3.0),
+        ]);
+        assert_eq!(arr.array_len(), 3);
+    }
+
+    #[test]
+    fn test_array_operations() {
+        let arr = Value::empty_array();
+        assert_eq!(arr.array_len(), 0);
+
+        arr.array_push(Value::Number(42.0)).unwrap();
+        assert_eq!(arr.array_len(), 1);
+
+        let popped = arr.array_pop().unwrap();
+        assert!(popped.is_some());
+        assert_eq!(arr.array_len(), 0);
+    }
+
+    #[test]
+    fn test_array_to_string() {
+        let arr = Value::array(vec![
+            Value::Number(1.0),
+            Value::String("hello".to_string()),
+            Value::Bool(true),
+        ]);
+        let s = arr.to_string();
+        assert!(s.contains("1"));
+        assert!(s.contains("hello"));
+        assert!(s.contains("true"));
+    }
+
+    // Object tests
+    #[test]
+    fn test_object_creation() {
+        let obj = Value::empty_object();
+        assert_eq!(obj.object_keys().len(), 0);
+    }
+
+    #[test]
+    fn test_object_operations() {
+        let obj = Value::empty_object();
+
+        obj.set_property("name".to_string(), Value::String("Alice".to_string()))
+            .unwrap();
+        obj.set_property("age".to_string(), Value::Number(30.0))
+            .unwrap();
+
+        assert_eq!(obj.object_keys().len(), 2);
+
+        let name = obj.get_property("name").unwrap();
+        assert_eq!(name.unwrap().to_string(), "Alice");
+
+        let age = obj.get_property("age").unwrap();
+        assert_eq!(age.unwrap().to_number(), 30.0);
+    }
+
+    // Equality tests
+    #[test]
+    fn test_equals() {
+        assert_eq!(Value::Null, Value::Null);
+        assert_eq!(Value::Bool(true), Value::Bool(true));
+        assert_eq!(Value::Number(42.0), Value::Number(42.0));
+        assert_eq!(
+            Value::String("hello".to_string()),
+            Value::String("hello".to_string())
+        );
+
+        assert_ne!(Value::Null, Value::Bool(false));
+        assert_ne!(Value::Number(1.0), Value::Number(2.0));
+    }
+
+    // Edge cases
+    #[test]
+    fn test_negative_numbers() {
+        let neg = Value::Number(-42.0);
+        assert!(neg.is_truthy());
+        assert_eq!(neg.to_number(), -42.0);
+    }
+
+    #[test]
+    fn test_float_precision() {
+        let f = Value::Number(3.14159265359);
+        assert_eq!(f.to_number(), 3.14159265359);
+    }
+
+    #[test]
+    fn test_large_numbers() {
+        let large = Value::Number(1e10);
+        assert_eq!(large.to_number(), 1e10);
+    }
+
+    #[test]
+    fn test_empty_string() {
+        let empty = Value::String("".to_string());
+        assert!(!empty.is_truthy());
+        assert_eq!(empty.to_string(), "");
+    }
+
+    #[test]
+    fn test_unicode_string() {
+        let unicode = Value::String("🚀 FreeLang".to_string());
+        assert!(unicode.is_truthy());
+        assert_eq!(unicode.to_string(), "🚀 FreeLang");
+    }
+
+    #[test]
+    fn test_nested_arrays() {
+        let inner = Value::array(vec![Value::Number(1.0), Value::Number(2.0)]);
+        let outer = Value::array(vec![inner, Value::Number(3.0)]);
+        assert_eq!(outer.array_len(), 2);
+    }
+
+    #[test]
+    fn test_array_push_multiple() {
+        let arr = Value::empty_array();
+        for i in 0..10 {
+            arr.array_push(Value::Number(i as f64)).unwrap();
+        }
+        assert_eq!(arr.array_len(), 10);
+    }
+
+    #[test]
+    fn test_object_overwrite() {
+        let obj = Value::empty_object();
+        obj.set_property("key".to_string(), Value::Number(1.0))
+            .unwrap();
+        obj.set_property("key".to_string(), Value::Number(2.0))
+            .unwrap();
+
+        let val = obj.get_property("key").unwrap().unwrap();
+        assert_eq!(val.to_number(), 2.0);
     }
 }
